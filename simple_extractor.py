@@ -89,16 +89,16 @@ def get_palette(num_cls):
 
 
 def main():
-    args = get_arguments()
+    # args = get_arguments() #일단 이건 쓰지 말아봐
+    #
+    # # gpus = [int(i) for i in args.gpu.split(',')]
+    # # assert len(gpus) == 1
+    # # if not args.gpu == 'None':
+    # #     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
 
-    gpus = [int(i) for i in args.gpu.split(',')]
-    assert len(gpus) == 1
-    if not args.gpu == 'None':
-        os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
-
-    num_classes = dataset_settings[args.dataset]['num_classes']
-    input_size = dataset_settings[args.dataset]['input_size']
-    label = dataset_settings[args.dataset]['label']
+    num_classes = dataset_settings['lip']['num_classes']
+    input_size = dataset_settings['lip']['input_size']
+    label = dataset_settings['lip']['label']
     print("Evaluating total class number {} with {}".format(num_classes, label))
 
     model = networks.init_model('resnet101', num_classes=num_classes, pretrained=None)

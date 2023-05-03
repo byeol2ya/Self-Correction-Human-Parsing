@@ -23,11 +23,14 @@ import torchvision.transforms as transforms
 import torch.backends.cudnn as cudnn
 
 import networks
-from datasets.datasets import LIPDataValSet
+from datasets.datasets import OURDataValSet
+from datasets.datasets import OURDataSet
 from utils.miou import compute_mean_ioU
 from utils.transforms import BGR2RGB_transform
 from utils.transforms import transform_parsing
 
+import wandb
+from matplotlib import pyplot as plt
 
 def get_arguments():
     """Parse all the arguments provided from the CLI.
@@ -81,7 +84,7 @@ def get_palette(num_cls):
     return palette
 
 
-def multi_scale_testing(model, batch_input_im, crop_size=[473, 473], flip=True, multi_scales=[1]):
+def multi_scale_testing(model, batch_input_im, crop_size=[256, 256], multi_scales=[1]):
     flipped_idx = (15, 14, 17, 16, 19, 18)
     if len(batch_input_im.shape) > 4:
         batch_input_im = batch_input_im.squeeze()
@@ -96,38 +99,44 @@ def multi_scale_testing(model, batch_input_im, crop_size=[473, 473], flip=True, 
         parsing_output = model(scaled_im)
         parsing_output = parsing_output[0][-1]
         output = parsing_output[0]
-        if flip:
-            flipped_output = parsing_output[1]
-            flipped_output[14:20, :, :] = flipped_output[flipped_idx, :, :]
-            output += flipped_output.flip(dims=[-1])
-            output *= 0.5
+        # if flip:
+        #     flipped_output = parsing_output[1]
+        #     flipped_output[14:20, :, :] = flipped_output[flipped_idx, :, :]
+        #     output += flipped_output.flip(dims=[-1])
+        #     output *= 0.5
         output = interp(output.unsqueeze(0))
         ms_outputs.append(output[0])
     ms_fused_parsing_output = torch.stack(ms_outputs)
     ms_fused_parsing_output = ms_fused_parsing_output.mean(0)
     ms_fused_parsing_output = ms_fused_parsing_output.permute(1, 2, 0)  # HWC
-    parsing = torch.argmax(ms_fused_parsing_output, dim=2)
-    parsing = parsing.data.cpu().numpy()
+    # parsing = torch.argmax(ms_fused_parsing_output, dim=2)
+    # parsing = parsing.data.cpu().numpy()
+    parsing = ms_fused_parsing_output.cpu().numpy()
     ms_fused_parsing_output = ms_fused_parsing_output.data.cpu().numpy()
     return parsing, ms_fused_parsing_output
+
+# def visualization(image):
 
 
 def main():
     """Create the model and start the evaluation process."""
-    args = get_arguments()
-    multi_scales = [float(i) for i in args.multi_scales.split(',')]
-    gpus = [int(i) for i in args.gpu.split(',')]
-    assert len(gpus) == 1
-    if not args.gpu == 'None':
-        os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
+    # args = get_arguments()
+    # multi_scales = [float(i) for i in args.multi_scales.split(',')]
+    # gpus = [int(i) for i in args.gpu.split(',')]
+    # assert len(gpus) == 1
+    # if not args.gpu == 'None':
+    #     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
 
+    wandb.init(project="0316-validation")
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0, 1"
     cudnn.benchmark = True
     cudnn.enabled = True
 
-    h, w = map(int, args.input_size.split(','))
-    input_size = [h, w]
+    # h, w = map(int, args.input_size.split(','))
+    input_size = [256, 256]
+    model_restore = './log/train_checkpoint_1/checkpoint_10.pth.tar'
 
-    model = networks.init_model(args.arch, num_classes=args.num_classes, pretrained=None)
+    model = networks.init_model('resnet101', num_classes=20, pretrained=None)
 
     IMAGE_MEAN = model.mean
     IMAGE_STD = model.std
@@ -141,7 +150,6 @@ def main():
             transforms.ToTensor(),
             transforms.Normalize(mean=IMAGE_MEAN,
                                  std=IMAGE_STD),
-
         ])
     if INPUT_SPACE == 'RGB':
         print('RGB Transformation')
@@ -153,13 +161,13 @@ def main():
         ])
 
     # Data loader
-    lip_test_dataset = LIPDataValSet(args.data_dir, 'val', crop_size=input_size, transform=transform, flip=args.flip)
+    lip_test_dataset = OURDataSet('B:/Datasets', 'val', input_size=input_size, transform=transform)
     num_samples = len(lip_test_dataset)
-    print('Totoal testing sample numbers: {}'.format(num_samples))
-    testloader = data.DataLoader(lip_test_dataset, batch_size=args.batch_size, shuffle=False, pin_memory=True)
+    print('Total testing sample numbers: {}'.format(num_samples))
+    testloader = data.DataLoader(lip_test_dataset, batch_size=56, shuffle=False, pin_memory=True)
 
     # Load model weight
-    state_dict = torch.load(args.model_restore)['state_dict']
+    state_dict = torch.load(model_restore)['state_dict']
     from collections import OrderedDict
     new_state_dict = OrderedDict()
     for k, v in state_dict.items():
@@ -168,8 +176,9 @@ def main():
     model.load_state_dict(new_state_dict)
     model.cuda()
     model.eval()
+    wandb.watch(model)
 
-    sp_results_dir = os.path.join(args.log_dir, 'sp_results')
+    sp_results_dir = os.path.join('./log/', 'sp_results')
     if not os.path.exists(sp_results_dir):
         os.makedirs(sp_results_dir)
 
@@ -179,29 +188,59 @@ def main():
     centers = np.zeros((num_samples, 2), dtype=np.int32)
     with torch.no_grad():
         for idx, batch in enumerate(tqdm(testloader)):
-            image, meta = batch
+            image, meta = batch # train : image, _, meta / val : image, meta
             if (len(image.shape) > 4):
                 image = image.squeeze()
             im_name = meta['name'][0]
-            c = meta['center'].numpy()[0]
-            s = meta['scale'].numpy()[0]
-            w = meta['width'].numpy()[0]
-            h = meta['height'].numpy()[0]
-            scales[idx, :] = s
-            centers[idx, :] = c
-            parsing, logits = multi_scale_testing(model, image.cuda(), crop_size=input_size, flip=args.flip,
-                                                  multi_scales=multi_scales)
-            if args.save_results:
-                parsing_result = transform_parsing(parsing, c, s, w, h, input_size)
-                parsing_result_path = os.path.join(sp_results_dir, im_name + '.png')
-                output_im = PILImage.fromarray(np.asarray(parsing_result, dtype=np.uint8))
-                output_im.putpalette(palette)
-                output_im.save(parsing_result_path)
+            # # Byeol's
 
-            parsing_preds.append(parsing)
-    assert len(parsing_preds) == num_samples
-    mIoU = compute_mean_ioU(parsing_preds, scales, centers, args.num_classes, args.data_dir, input_size)
-    print(mIoU)
+            random_id = np.random.randint(0, 56)
+            # Visualization of input in image
+            input = plt.imshow(image[random_id].cpu().numpy().transpose(1, 2, 0)) # (1, 2, 0)
+            wandb.log({"input": [wandb.Image(input, caption="input")]})
+
+            # # Visualization of gt in image
+            # gt = plt.imshow(labels[random_id].cpu().numpy())
+            # wandb.log({"gt": [wandb.Image(gt, caption="gt")]})
+
+            ## Byeol's oigin
+            # visualization of prediction in image
+            preds = model(image.cuda())  # val # .float()
+            img1 = preds[0][1]
+            output = (img1[random_id, 9]).cpu().numpy()
+
+            # img1 = img1.cpu().numpy()
+            # # # make 20 channels of image -> single imageㅊ
+            # # single_channel_img = torch.mean(img1, dim=0)
+            # # single_channel_img = single_channel_img.cpu().numpy()
+            #
+            # wandb.log({"validation": [wandb.Image(img1, caption="validation_result")]})
+
+            # c = meta['center'].numpy()[0]
+            # s = meta['scale'].numpy()[0]
+            # w = meta['width'].numpy()[0]
+            # h = meta['height'].numpy()[0]
+            # scales[idx, :] = s
+            # centers[idx, :] = c
+
+            #### original!
+            # parsing, logits = multi_scale_testing(model, image.cuda(), crop_size=input_size,
+            #                                       multi_scales=[1])
+
+            # parsing_result = transform_parsing(image.cuda(), input_size)
+            # parsing_result = parsing_result[random_id, 9]
+            # parsing_result_path = os.path.join(sp_results_dir, im_name + '.png')
+            # output_im = PILImage.fromarray(np.asarray(parsing_result, dtype=np.uint8))
+            wandb.log({"validation after 10 epoch": [wandb.Image(output, caption="validation_result")]})
+            #
+            # ## original code for visuzlie and save the output
+            # output_im.putpalette(palette)
+            # output_im.save(parsing_result_path)
+            # parsing_preds.append(image)
+
+    # assert len(parsing_preds) == num_samples
+    # mIoU = compute_mean_ioU(parsing_preds, scales, centers, args.num_classes, args.data_dir, input_size)
+    # print(mIoU)
     return
 
 

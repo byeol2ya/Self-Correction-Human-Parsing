@@ -65,13 +65,14 @@ def transform_preds(coords, center, scale, input_size):
         target_coords[p, 0:2] = affine_transform(coords[p, 0:2], trans)
     return target_coords
 
-def transform_parsing(pred, center, scale, width, height, input_size):
+def transform_parsing(pred, input_size): #  center, scale, width, height,
 
-    trans = get_affine_transform(center, scale, 0, input_size, inv=1)
+    # trans = get_affine_transform(center, scale, 0, input_size, inv=1)
+    trans = np.float32([[1, 0, 0], [0, 1, 0]])
     target_pred = cv2.warpAffine(
             pred,
             trans,
-            (int(width), int(height)), #(int(width), int(height)),
+            (int(input_size[0]), int(input_size[1])), #(int(width), int(height)),
             flags=cv2.INTER_NEAREST,
             borderMode=cv2.BORDER_CONSTANT,
             borderValue=(0))
@@ -96,7 +97,7 @@ def transform_logits(logits, center, scale, width, height, input_size):
 
     return target_logits
 
-
+# get_affine_transform(center, ) : center없앰
 def get_affine_transform(center,
                          scale,
                          rot,
@@ -119,8 +120,8 @@ def get_affine_transform(center,
 
     src = np.zeros((3, 2), dtype=np.float32)
     dst = np.zeros((3, 2), dtype=np.float32)
-    src[0, :] = center + scale_tmp * shift
-    src[1, :] = center + src_dir + scale_tmp * shift
+    src[0, :] = center + scale_tmp * shift # center + scale_tmp * shift
+    src[1, :] = center + src_dir + scale_tmp * shift # center + src_dir + scale_tmp * shift
     dst[0, :] = [(dst_w-1) * 0.5, (dst_h-1) * 0.5]
     dst[1, :] = np.array([(dst_w-1) * 0.5, (dst_h-1) * 0.5]) + dst_dir
 

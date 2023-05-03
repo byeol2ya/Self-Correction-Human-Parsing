@@ -48,6 +48,7 @@ class CriterionAll(nn.Module):
         Returns:
             Calculated Loss.
         """
+
         h, w = target[0].size(1), target[0].size(2)
 
         pos_num = torch.sum(target[1] == 1, dtype=torch.float)
@@ -58,7 +59,6 @@ class CriterionAll(nn.Module):
         weights = torch.tensor([weight_neg, weight_pos])  # edge loss weight
 
         loss = 0
-
         # loss for segmentation
         preds_parsing = preds[0]
         for pred_parsing in preds_parsing:
