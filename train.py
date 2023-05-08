@@ -83,9 +83,9 @@ def main():
     # print(args)
 
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID" # Arrange GPU devices starting from 0
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0, 1"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    wandb.init(project="increase-batch")
+    wandb.init(project="kt-19")
 
     start_epoch = 0
     cycle_n = 0
@@ -98,7 +98,7 @@ def main():
     print('CUDA_HOME : ', os.environ.get('CUDA_HOME'))
 
     # Model Initialization
-    AugmentCE2P = networks.init_model('resnet101', num_classes=20, pretrained='C:/Users/Choi Byeoli/Documents/GitHub/Self-Correction-Human-Parsing/models/resnet101-imagenet.pth') #pretrained='./pretrain_model/reset101-imagenet.pth'
+    AugmentCE2P = networks.init_model('resnet101', num_classes=20, pretrained='C:/Users/PC1919/Documents/GitHub/Self-Correction-Human-Parsing/models/resnet101-imagenet.pth') #pretrained='./pretrain_model/reset101-imagenet.pth'
     model = DataParallelModel(AugmentCE2P).to(device) # .to(device) 원래 없었음
     # model.cuda()
     IMAGE_MEAN = AugmentCE2P.mean
@@ -115,7 +115,7 @@ def main():
         model.load_state_dict(checkpoint['state_dict'])
         # start_epoch = checkpoint['epoch']
 
-    SCHP_AugmentCE2P = networks.init_model('resnet101', num_classes=20, pretrained = 'C:/Users/Choi Byeoli/Documents/GitHub/Self-Correction-Human-Parsing/models/resnet101-imagenet.pth')
+    SCHP_AugmentCE2P = networks.init_model('resnet101', num_classes=20, pretrained = 'C:/Users/PC1919/Documents/GitHub/Self-Correction-Human-Parsing/models/resnet101-imagenet.pth')
     schp_model = DataParallelModel(SCHP_AugmentCE2P)
     schp_model.cuda()
 
@@ -151,7 +151,7 @@ def main():
         ])
 
     # train_dataset = LIPDataSet('./datasets/LIP', 'train', crop_size=input_size, transform=transform)
-    train_dataset = OURDataSet('C:/Users/Choi Byeoli/Documents/FinalData', 'train', input_size=input_size, transform=transform)
+    train_dataset = OURDataSet('C:/Users/PC1919/Documents/FinalData/test', 'train', input_size=input_size, transform=transform)
     train_loader = data.DataLoader(train_dataset, batch_size=50,
                                    num_workers=0, shuffle=False, pin_memory=True, drop_last=True)
     print('Total training samples: {}'.format(len(train_dataset)))
@@ -199,7 +199,7 @@ def main():
                     soft_edge = []
                     for soft_pred in soft_preds:
                         soft_parsing.append(soft_pred[0][-1].to('cuda:0'))
-                        soft_edge.append(soft_pred[1][-1].to('cuda:1'))
+                        soft_edge.append(soft_pred[1][-1].to('cuda:0'))
 
                     soft_preds = torch.cat(soft_parsing, dim=0)
                     soft_edges = torch.cat(soft_edge, dim=0)
